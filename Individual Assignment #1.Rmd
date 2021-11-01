@@ -1,0 +1,84 @@
+---
+title : "" 
+output: html_notebook
+---
+***
+<center>
+## Individual Assignment #1: ETS Laboratory
+#### Due: Nov. 4 (Before Class)
+#### (40 points)
+</center>
+***
+
+You have been hired by a company in the hospitality business to help them plan the staffing levels for the following year.  The company operates resorts in three regions of the New South Wales of Australia; the three regions are the **Sydney**, the **South Coast** and the **North Coast NSW** areas.
+
+As it takes time to hire new personnel and it is necessary for any new employee to undergo a detailed training program before starting to work, the company needs to plan its personnel requirements one year in advance.  Furthermore, as it is possible for the company to transfer qualified personnel between regions, they are interested only in an aggregate forecast of their demand 
+
+As the company caters to **Holiday** travelers, and it has been growing faster than the market (i.e., it has been gaining market share), the Chief Commercial Officer estimates that next year they will have respectively (3%, 4%, 4%) of only the **Holiday** travelers in the (**Sydney**, **South Coast**, and **North Coast NSW**) regions respectively.  Furthermore based on prior experience they anticipate that each traveler will stay respectively (5,2,2) hotel-nights in (**Sydney**, **South Coast**, and **North Coast NSW**) respectively
+
+To forecast demand in hotel-nights use the **tourism** data set in **fpp3**.  This data set reports the quarterly trips (in thousands) to different destinations, and as this data set has a *tsibble* structure, you can use **tidyverse** functions to subset the time-series of interest.  
+
+For the purposes of this assignment ignore all data before **2008 Q1** and use the data from **2008 Q1** through **2016 Q4** as a traing set and the four quarters of **2017** as a testing set.
+
+If you need to dust-off the tidyverse functions, a good reference is the electronic book [*R for Data Science*](https://r4ds.had.co.nz/)  or alternatively, if you only need a quick refresher of the **dplyr** and **tidyr**   functions you can use the following [*Data Wrangling Cheat Sheet*](https://rstudio.com/wp-content/uploads/2015/02/data-wrangling-cheatsheet.pdf)
+
+
+### Part I.  Model-Aggregation Forecast 
+
+1. After subsetting for the time-series of interest in the **tourism** data set (a *tsibble*), add to the restricted set the corresponding demand time-series, by creating a column called *Demand*  for each of the corresponding regions of interest.  The *Demand* column should contain the hotel-nights (in thousands) corresponding to each of the *Trips* observations. After creating the *Demand* column, fit automatically the best **ETS** model for each *Demand* time-series. In addition to the automatic fit, one of your colleagues suggest that you should try the "AAM" model and the "AAdM" models as they may be preferred under the *BIC* criterion.  Report for each region the best model as well as the corresponding *AICc* and *BIC*. What is the best model according to the information criteria?
+
+```{r}
+library(fpp3)
+
+# Subset the appropriate data and create the "Demand" time-series
+tourism %>% 
+  filter(Quarter >= yearquarter("2008 Q1")) %>%
+  filter(Purpose == "Holiday" & State == "New South Wales") %>%
+  filter(Region %in% c("North Coast NSW","South Coast","Sydney")) %>%
+  mutate(Demand = case_when(
+    Region == "Sydney" ~ 0.03*Trips*5,
+    Region == "South Coast" ~ 0.04*Trips*2,
+    Region == "North Coast NSW" ~ 0.04*Trips*2
+  )) -> D
+
+# Break into Training and Testing sets.
+
+DTR <- D %>% 
+  filter(Quarter <= yearquarter("2016 Q4"))
+DTE <- D %>% 
+  filter(Quarter >= yearquarter("2017 Q1"))
+```
+
+
+
+2. Using the best model selected in (1), prepare a forecast for the four quarters of 2017 and report for each time series the in-sample (training) MAPE, and out-of-sample (testing) MAPE.  
+
+
+3. Add the three forecasts of each region for the selected model to obtain the total forecast and compute the fitted (training) MAPE and the testing MAPE.  Compare the MAPEs of the aggregate forecasts with those of the regional forecasts.  Which ones are larger/smaller? Explain why did you obtain these results.
+
+
+### Part II. Data-Aggregation Forecast
+
+4. Now aggregate the region-specific demand data to compile an aggregate demand time series, the aggregated demand into traing and testing time-series, and fit the automatic model, plus the two models you fitted in Question (1)  What is the best model for the aggregate data?
+
+5. Using the best model selected in (4), prepare a forecast for the four quarters of 2017 and report the in-sample (training) MAPE, and out-of-sample (testing) MAPE. 
+
+
+### Part III. Forecasting Model Analysis and Aggregate Forecast
+
+6. Using the best modeling approach (model-aggregation vs data-aggregation) and the best ETS model(s) selected, and using all the data available fit the model(s), report the model parameters, the in-sample MAPE, and plot the forecast for the four quarters of 2018.
+
+
+7. As it is very costly to be short of personnel, we need to plan the staffing levels according to a forecast that we anticipate it will not be exceeded with a probability of 99%.  What are these quarterly demand levels?
+
+8. Sometimes not all the data availalble is representative of the recent and future business conditions.  Redefine the training data set *** DTR*** to exclude all data older than 2010 and reevaluate your recommendation in Questions (6) and (7).
+
+```{r}
+DTR <- D %>% 
+  filter(Quarter >= yearquarter("2010 Q1"),
+         Quarter <= yearquarter("2016 Q4"))
+```
+
+
+
+
