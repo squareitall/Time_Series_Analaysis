@@ -1,0 +1,316 @@
+---
+title : "Shubham Singh" 
+output: html_notebook
+---
+***
+<center>
+## Individual Assignment #3: Regression with ARIMA Errors Laboratory
+### Shubham Singh
+</center>
+***
+
+
+
+
+```{r associated libraries, include=FALSE, echo=FALSE, fig.height=10, fig.width=15}
+library(fpp3)
+library(tseries)
+library(gridExtra)
+```
+# DATA Pre Processing
+
+
+```{r data pre processing, include=TRUE, echo=FALSE, fig.height=10, fig.width=15}
+setwd("D:/FALL/SupplyChainAnalytics/Forecast_Analytics_TimeSeries_part2/IA_3")
+X = read.csv("Booking Exercise.csv")
+X=mutate(X,DATE = ymd(DATE)) %>%
+  as_tsibble(index = DATE)
+
+colnames(X)=tolower(colnames(X))
+
+Fcst.X = X %>% filter(date >= ymd("2010-08-18"))
+
+df= X %>% filter(date <= ymd("2010-08-17"))
+colnames(df)=tolower(colnames(df))
+
+head(df)
+
+df= mutate(df,demand_diff1=difference(demand),
+           demand_diff2=difference(demand_diff1),
+           demand_diff3=difference(demand_diff2))
+
+
+p0= autoplot(df,.vars=demand) + geom_hline(yintercept=mean(df$demand),color='red')
+p1 = autoplot(df,.vars=demand_diff1) + geom_hline(yintercept=mean(na.omit(df$demand_diff1))
+                                            ,color='red')
+p2=autoplot(df,.vars=demand_diff2) + geom_hline(yintercept=mean(na.omit(df$demand_diff2))
+                                           ,color='red')
+p3=autoplot(df,.vars=demand_diff3) + geom_hline(yintercept=mean(na.omit(df$demand_diff3))
+                                                ,color='red')
+
+grid.arrange(p0,p1,p2,p3)
+
+
+```
+
+1) The demand based curve demonstrates some regular up and down trend and
+hence we cannot build a stationary ARIMA model on that variable.
+
+2) First difference solves the trend issue to an appreciable extent.
+
+3) We can observe periodicity in the diff1 curve.
+
+4) We can gain more confidence on this hypothesis by 
+observing the ACF and PACF curves
+
+
+
+
+```{r data pre processing_2, include=TRUE, echo=FALSE, fig.height=10, fig.width=15}
+
+acf0=autoplot(ACF(df,demand))
+acf1=autoplot(ACF(df,demand_diff1,lag_max = 25))#,xlab='diff1')
+acf2=autoplot(ACF(df,demand_diff2,lag_max = 25))
+acf3=autoplot(ACF(df,demand_diff3,lag_max = 25))
+
+
+grid.arrange(acf0,acf1,acf2,acf3)#,nrows=2)
+
+
+
+pacf0=autoplot(PACF(df,demand))
+pacf1=autoplot(PACF(df,demand_diff1,lag_max = 25))#,xlab='diff1')
+pacf2=autoplot(PACF(df,demand_diff2,lag_max = 25))
+pacf3=autoplot(PACF(df,demand_diff3,lag_max = 25))
+
+
+grid.arrange(pacf0,pacf1,pacf2,acf3)#,nrows=2)
+
+
+grid.arrange(acf0,pacf0)
+grid.arrange(acf1,pacf1)
+```
+
+## Observations
+
+1) ACF of diff1_demand seems to be clean for first few lags 
+
+2) However there is significant autocorrelation between variables present
+at lags of 7, this association trend can be observed at multiple lags of 7
+
+3)It suggests presence of autocorrelation between variable,
+shifted by a lag of 7, thus we can hypothesize presence of PDQ=(1,1,0)m=7 model
+
+4) Except for the first lag all other initial lags in the ACF model is insignificant.
+
+5) This observation when mapped together with 2-3 significant initial 
+lags in PACF indicates towards presence of  MA(1)
+
+Takeaway-
+One can observe significant ACF correlation at regular intervals of 7 lags 
+Parallel we can observe just one prominent correlation in PACF at lag 7, 
+there is some associated windowing affect that we can ignore
+We can speculate presence of season shifted (at lags of 7) based AR(1) model,
+as only 1 pacf is prominent which must have engendered all
+other ACFs at regular interval of 7 lags
+
+
+## Non_Seasonal model - ARIMA(0,1,1)
+## Seasonal model- pdq(0,1,1)+PDQ(1,1,0)m=7
+
+
+```{r data pre processing_3, include=TRUE, echo=FALSE, fig.height=10, fig.width=15}
+
+df$demand_diff1 %>%
+  na.omit() %>%
+  adf.test()
+
+df$demand %>%
+  na.omit() %>%
+  adf.test()
+
+features(df,demand_diff1, unitroot_kpss)
+df%>%features(demand_diff1,ljung_box,lags=21)
+```
+
+
+The p value of the ljung Box test is not that high as much as we have
+speculated. This can be attributed to the presence of seasonality pattern.
+However the unit root based ADF test demonstrates low value for demand_diff 
+variable. Thus we can hypothesize that the diff based data is stationary.
+
+
+
+
+<center> <b> ANS 1
+</center>
+
+```{r Ans 1, include=TRUE, echo=TRUE, fig.height=10, fig.width=15}
+m = df %>% model(mod_ets=ETS(demand),
+                 mod_arima=ARIMA(demand),
+                 mod_lin=TSLM(demand ~ tuesday.book),
+                 mod_lin_arima_auto=ARIMA(demand ~ tuesday.book),
+                 mod_arima_lin=ARIMA(demand ~ tuesday.book + dow.index + pdq(0,1,1)),
+                 mod_arimaS_lin=ARIMA(demand ~ tuesday.book + pdq(0,1,1)+ PDQ(1,1,0,period=7))
+)
+
+m %>% 
+  augment() %>%
+  features(.resid, ljung_box, lag = 21)
+
+
+
+m = df %>% model(mod_ets=ETS(demand),
+                 mod_arima=ARIMA(demand),
+                 mod_lin=TSLM(demand ~ tuesday.book),
+                 mod_lin_arima_auto=ARIMA(demand ~ tuesday.book),
+                 mod_arima_lin=ARIMA(demand ~ tuesday.book + dow.index + pdq(0,0,1)),
+                 mod_arimaS_lin=ARIMA(demand ~ tuesday.book + pdq(0,0,1)+ PDQ(1,1,0,period=7))
+)
+
+
+```
+
+#The moving average based non seasonal trend is more prominent in diff0 curve ,
+#This is also supported by ljunj test scores for diff 1 based seasonal model
+
+
+<center> <b> ANS 2
+</center>
+
+```{r Ans 2, include=TRUE, echo=TRUE, fig.height=10, fig.width=15}
+m %>% 
+  augment() %>%
+  features(.resid, ljung_box, lag = 21)
+
+m%>%select(mod_arima)%>% gg_tsresiduals()
+m%>%select(mod_arima_lin)%>% gg_tsresiduals()
+m%>%select(mod_arimaS_lin)%>% gg_tsresiduals()
+m%>%select(mod_ets)%>% gg_tsresiduals()
+m%>%select(mod_lin)%>% gg_tsresiduals()
+m%>%select(mod_lin_arima_auto)%>% gg_tsresiduals()
+
+#Surprisingly residuals generated from the linear model are normally distributed and has no correlation
+
+select(m,mod_arima)%>% report()
+
+select(m,mod_lin)%>% report()
+select(m,mod_ets)%>% report()
+select(m,mod_lin_arima_auto)%>% report()
+
+```
+
+The model trained on ETS frameworks seems to produce errors that are not 
+normally distributed.
+Additionally, the errors demonstrate substantial degree of correlation 
+at higher lags.
+So the model ETS(A,N,A) is able to detect seasonality but is unable to capture 
+pattern of seasonality.
+This can be attributed to paramaetric simplicity of ETS model.
+
+
+The Ljung Box test results portrays presence of dependence between residuals 
+generated from the seasonal arima based linear model.
+
+
+The residuals generated from the simple linear model are highly correlated at 
+a few lags, even the Ljung Box test fails to prove independence of 
+the error terms.
+
+
+All other models has demonstrated high p values for this test.
+Distribution plots along with ACF , PACf plots of residuals corroborates
+normality of residuals and presence of non-correlation in residuals for 
+trained simple arima and linear models with seasonal and 
+non seasonal arima errors.
+
+<center> <b> ANS 3
+</center>
+
+```{r Ans 3, include=TRUE, echo=TRUE, fig.height=10, fig.width=15}
+m %>% glance() %>%
+  select(.model, AIC, AICc, BIC)
+
+```
+In terms of AIC and BIC the linear (with only tuesday book as predictor) 
+model turns out to be the best choice
+
+Linear model with automatic arima fitted error also performs well with respect 
+to AIC values residual = Fn(ARIMA(0,0,1)(2,1,0)[7] on errors)
+
+However we cannot forego the fact that the residuals of linear model are 
+correlated, which will impact the prediction performed from the model.
+
+
+<center> <b> ANS 4
+</center>
+
+```{r Ans 4, include=TRUE, echo=TRUE, fig.height=10, fig.width=15}
+m %>% forecast(new_data = Fcst.X) %>%
+  autoplot() +
+  geom_line(df, mapping = aes(y = demand))
+
+
+
+forecast_stats=m %>%select('mod_lin','mod_arima_lin')%>%
+  forecast(new_data = Fcst.X) %>%hilo(level =c(80,90))%>%
+  unpack_hilo('90%') %>%
+  unpack_hilo('80%') %>% select('.mean','80%_lower','80%_upper',
+                                       '90%_lower','90%_upper')
+
+forecast_stats=m %>%
+  forecast(new_data = Fcst.X) %>%hilo(level =c(80,90))%>%
+  unpack_hilo('90%') %>%
+  unpack_hilo('80%') %>% select('.mean','80%_lower','80%_upper',
+                                       '90%_lower','90%_upper')
+
+colnames(forecast_stats)=c(".mean" , "eighty_lower" ,"eighty_upper" ,"ninety_lower", "ninety_upper", "date" , ".model")
+print(forecast_stats)
+
+
+```
+
+
+
+
+
+<center> <b> ANS 5
+</center>
+
+```{r Ans 5, include=TRUE, echo=TRUE, fig.height=10, fig.width=15}
+forecast_pct=forecast_stats%>% mutate(
+  organic_demand_pct=(.mean/1877)*100,
+  demand_80_lower_limit_pct=(eighty_lower/1877)*100
+)
+
+print(forecast_pct)
+
+ggplot(data=forecast_pct, aes(x=date,y = organic_demand_pct,group=.model)) +
+  geom_line(aes(color=.model))+
+  geom_point(aes(color=.model))+
+  geom_hline(yintercept=67  ,color='black')
+
+
+ggplot(data=forecast_pct, aes(x=date,y = demand_80_lower_limit_pct,group=.model)) +
+  geom_line(aes(color=.model))+
+  geom_point(aes(color=.model))+
+  geom_hline(yintercept=67  ,color='black')
+
+```
+
+For 22nd August all the models suggest that mean expected occupancy will be 
+more than 67%, hence we should refrain from making booking of 60 rooms for 
+the tour operator
+
+The lower limit of our 80 percent confidence interval for the organic demand 
+estimate, suggest occupancy greater* than 67% on 22nd of August.
+
+*Models like auto ETS and auto ARIMA that did not use other independent 
+predictors possibly seems to underestimate** the organic demand forecast.
+The estimates of lower limit of their confidence interval thus can be shifted
+upwards
+
+**Beta coefficient of tuesday book in series of linear models is 
+positive and is significant
+
+
